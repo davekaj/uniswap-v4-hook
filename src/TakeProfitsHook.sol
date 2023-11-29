@@ -6,8 +6,14 @@ import {ERC1155} from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import {IPoolManager} from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
 
+import {Currency, CurrencyLibrary} from "@uniswap/v4-core/contracts/types/Currency.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+
+
 contract TakeProfitsHook is BaseHook, ERC1155 {
     using PoolIdLibrary for IPoolManager.PoolKey;
+    using CurrencyLibrary for Currency;
 
     mapping(PoolId poolId => int24 tickLower) public tickLowerLasts;
 
@@ -17,6 +23,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     mapping(PoolId poolId => mapping(int24 tick => mapping(bool zeroForOne => int256 amount))) public
         takeProfitPositions;
 
+    // DK NOTE - honestly this implementation is a bit confusing.... not sure if it is the correct way to go. 
     // ERC-1155 State
     // stores whether a give tokenId (i.e. take profit order) exists
     mapping(uint256 tokenId => bool exists) public tokenIdExists;
@@ -26,6 +33,12 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     mapping(uint256 tokenId => uint256 supply) public tokenIdTotalSupply;
     // stores the data for a given tokenId
     mapping(uint256 tokenId => TokenData) public tokenIdData;
+
+    struct TokenData {
+        IPoolManager.PoolKey poolKey;
+        int24 tick;
+        bool zeroForOne;
+    }
 
     constructor(IPoolManager _poolManager, string memory _uri) BaseHook(_poolManager) ERC1155(_uri) {}
 
@@ -46,6 +59,37 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     function afterInitialize(address, IPoolManager.Poolkey calldata key, uint160, int24 tick) {
         _setTickLowerLast(key.toId(), _getTickLower(tick, key.tickSpacing));
         return TakeProfitsHook.afterInitialize.selector;
+    }
+
+    // Core utilities
+    function placeOrder(
+        IPoolManager.PoolKey calldata key,
+        int24 tick,
+        uint256 amountIn,
+        bool zeroForOne
+    ) external returns (int24) {
+        int24 tickLower = _getLickLower(tick, key.tickSpacing);
+        takeProfitPositions[key.toId()][tickLower][zeroForOne] += int256(amountIn);
+
+        uint256 tokenId = getTokenId(key.toId(), tickLower, zeroForOne);
+
+        if (!tokenIdExists[tokenId]) {
+            tokenIdExists[tokenId] = true;
+            tokenIdData[tokenId] = TokenData(key, tickLower, zeroForOne);
+        }
+
+        _mint(msg.sender, tokenId, amountIn, "");
+        tokenIdTotalSupply[tokenId] += amountIn;
+
+        address tokenToBeSoldContract = zeroForFor ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
+
+        IERC20(tokenToBeSoldContract).transferFrom(msg.sender, address(this), amountIn);
+
+        return tickLower;
+    }
+
+    function cancelCorder() external {
+        // TODO
     }
 
     // Note - With a limit order, we mint them an ERC-1155 token. it acts like a receipt of the order, that you can come claim later
