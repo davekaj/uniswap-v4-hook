@@ -134,7 +134,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         return tickLower;
     }
 
-    function cancelCorder(PoolKey calldata key, int24 tick, bool zeroForOne) external {
+    function cancelOrder(PoolKey calldata key, int24 tick, bool zeroForOne) external {
         int24 tickLower = _getTickLower(tick, key.tickSpacing);
         uint256 tokenId = getTokenId(key, tickLower, zeroForOne);
 
