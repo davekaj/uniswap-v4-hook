@@ -88,8 +88,20 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         return tickLower;
     }
 
-    function cancelCorder() external {
-        // TODO
+    function cancelCorder(IPoolManager.PoolKey calldata key, int24 tick, bool zeroForOne) external {
+        int24 tickLower = _getTickLower(tick, key.tickSpacing);
+        uint256 tokenId = getTokenId(key.toId(), tickLower, zeroForOne);
+
+        // balanceOf is coming from ERC-1155
+        uint256 amountIn = balanceOf(msg.sender, tokenId);
+        require(amountIn > 0, "TakeProfitsHook: No orders to cancel");
+
+        takePRofitPositions[key.toId()][tickLower][zeroForOne] -= int256(amountIn);
+        tokenIdTotalSupply[tokenId] -= amountIn;
+        _burn(msg.sender, tokenId, amountIn);
+
+        address tokensToBeSoldContract = zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
+        IERC20(tokensToBeSoldContract).transfer(msg.sender, amountIn);
     }
 
     // Note - With a limit order, we mint them an ERC-1155 token. it acts like a receipt of the order, that you can come claim later
@@ -115,3 +127,27 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         return intervals * tickSpacing;
     }
 }
+
+
+/*
+sqrtPRiceLimitX96
+Q Notation
+Some Value 'V' that is in decimal
+V => Q Notation with X92
+
+V * (2 ^ k) where k is some constant
+V * (2 ^ 96)
+
+Imagine V represented the price of Tokan A in terms of Token B
+1 Token A = 1.0000245 Token B, where 1.000245 is V
+V * 2^96 = 1.0000245 * 2^96 = 792467020000000000.... (uint160)
+
+`sqrtPriceLimitX96` is the Q notation value for the Square Root of the Price (right now)
+Price (right now) = Price(i=currentTick) = 1.0001 ^ i
+
+sqrtPriceX96 = sqrt(1.0001 ^ i) * 2^96
+
+`sqrtPriceLimitX96` specifies a LIMIT on the price ratio
+
+This was all recorded to do reasonable slippage in orders
+*/
