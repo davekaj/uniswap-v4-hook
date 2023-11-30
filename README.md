@@ -3,8 +3,6 @@ Just doing some learning with examples from the internet, before tackling my own
 
 <details>
 <summary><h3>A template for writing Uniswap v4 Hooks </h3></summary>
-### **🦄**
-
 [`Use this Template`](https://github.com/saucepoint/v4-template/generate)
 
 1. The example hook [Counter.sol](src/Counter.sol) demonstrates the `beforeSwap()` and `afterSwap()` hooks
@@ -15,11 +13,11 @@ Just doing some learning with examples from the internet, before tackling my own
    - Create a liquidity pool on V4
    - Add liquidity to a pool
    - Swap tokens on a pool
-6. This template is built using Foundry
+4. This template is built using Foundry
 </details>
 
 <details>
-<summary><b>NOTE: v4-core versioning</b></summary>
+<summary><h3>NOTE: v4-core versioning</h3></summary>
 
 Previous versions of `v4-template` accessed `v4-core` as the nested dependency of `v4-periphery`. With recent core activity, `v4-periphery` is slightly out of sync.
 
@@ -28,8 +26,6 @@ As of 11/16/2023, `v4-template` has pinned a version of `v4-core` that is most s
 If there are issues, please do not hesistate on reaching out to [saucepoint](https://t.me/saucepoint)
 
 </details>
-
----
 
 <details>
 <summary><h3>Local Development (Anvil)</h3></summary>
@@ -95,10 +91,8 @@ forge create script/mocks/mUSDC.sol:MockUSDC \
 
 </details>
 
----
-
 <details>
-<summary><h2>Troubleshooting</h2></summary>
+<summary><h3>Troubleshooting</h3></summary>
 
 
 
