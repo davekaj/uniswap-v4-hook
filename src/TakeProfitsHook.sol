@@ -9,7 +9,8 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol
 import {Currency, CurrencyLibrary} from "@uniswap/v4-core/contracts/types/Currency.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-
+import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
+import {BalanceDelta} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol"; // Represents the price quote when trying to do a swap
 
 contract TakeProfitsHook is BaseHook, ERC1155 {
     using PoolIdLibrary for IPoolManager.PoolKey;
@@ -19,16 +20,16 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
 
     // This is the LIMIT ORDER.... specify the pool, the tick where you trade, which asset, and the amount
     // Technically speaking, the limit orders are combined under AMOUNT. The ERC-1155 receipt is what gives you ownership over a part of that amount
-    // zeroForOne is sell tokenZero for tokenOne
+    // zeroForOne is sell tokenZero for tokenOne (making token1 more expensive)
     mapping(PoolId poolId => mapping(int24 tick => mapping(bool zeroForOne => int256 amount))) public
         takeProfitPositions;
 
-    // DK NOTE - honestly this implementation is a bit confusing.... not sure if it is the correct way to go. 
+    // DK NOTE - honestly this implementation is a bit confusing.... not sure if it is the correct way to go.
     // ERC-1155 State
     // stores whether a give tokenId (i.e. take profit order) exists
     mapping(uint256 tokenId => bool exists) public tokenIdExists;
     // stores how many swapped tokens are claimable for a give trade
-    mapping(uint256 tokenId => claimable ) public tokenIdClaimable;
+    mapping(uint256 tokenId => claimable) public tokenIdClaimable;
     // stores how many tokens need to be sold to execute the trade
     mapping(uint256 tokenId => uint256 supply) public tokenIdTotalSupply;
     // stores the data for a given tokenId
@@ -61,13 +62,18 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         return TakeProfitsHook.afterInitialize.selector;
     }
 
+    // So why do the linit order in after swap?
+    // After every swap that normal people do, we can look at - what is now the current price / tick of the pool?
+    // We compare it to the last known tick that we have and check if price/tick when up or down
+    // If up, the price of token0 has increased
+    // THEN we search for any open orders on those ticks. If there are, we simply call fillOrder()
+    function afterSwap()
+
     // Core utilities
-    function placeOrder(
-        IPoolManager.PoolKey calldata key,
-        int24 tick,
-        uint256 amountIn,
-        bool zeroForOne
-    ) external returns (int24) {
+    function placeOrder(IPoolManager.PoolKey calldata key, int24 tick, uint256 amountIn, bool zeroForOne)
+        external
+        returns (int24)
+    {
         int24 tickLower = _getLickLower(tick, key.tickSpacing);
         takeProfitPositions[key.toId()][tickLower][zeroForOne] += int256(amountIn);
 
@@ -104,6 +110,51 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         IERC20(tokensToBeSoldContract).transfer(msg.sender, amountIn);
     }
 
+    // SInce there is a single contract that manages all the pools, we need to go get a LOCK on the pool manager in order to do that
+    // Then give it a callback - once you get the lock, do this for me
+    function _fillOrder(IPoolManager.PoolKey calldata key, int24 tick, bool zeroForOne, int256 amountIn) internal {
+        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: amountIn,
+            sqrtPriceLimitx96: zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1
+        });
+
+        BalanceDelta delta =
+            abi.decode(poolManager.lock(abi.encodeCall(this._handleSwap, key, swapParams)), (BalanceDelta));
+
+        takeProfitPositions[key.toId()][tick][zeroForOne] -= amountIn;
+        uint256 tokenId = getTokenId(key, tick, zeroForOne);
+        uint256 amountOfTokensReceivedFromSwap = zeroForOne ? uint256(int256(-delta.amount1())) : uint256(int256(-delta.amount0()));
+        tokenIdClaimable[tokenId] += amountOfTokensReceivedFromSwap
+    }
+
+    function _handleSwap(IPoolManager.PoolKey calldata key, IPoolManager.SwapParams calldata params)
+        external
+        returns (BalanceDelta)
+    {
+        BalanceDelta delta = poolManager.swap(key, params);
+
+        if (params.zeroForOne) {
+            if (delta.amount0() > 0) {
+                IERC20(Currency.unwrap(key.currency0)).transfer(address(poolManager), uint128(delta.amount0));
+                poolManager.settle(key.currency0);
+            }
+            if (delta.amount1() < 0) {
+                poolManager.take(key.currency1, address(this), uint128(-delta.amount1()));
+            }
+        } else {
+            if (delta.amount1() > 0) {
+                IERC20(Currency.unwrap(key.currency1)).transfer(address(poolManager), uint128(delta.amount1));
+                poolManager.settle(key.currency1);
+            }
+            if (delta.amount0() < 0) {
+                poolManager.take(key.currency0, address(this), uint128(-delta.amount0()));
+            }
+        }
+
+        return delta;
+    }
+
     // Note - With a limit order, we mint them an ERC-1155 token. it acts like a receipt of the order, that you can come claim later
     // ERC-1155 helpers
     function getTokenId(PoolId poolId, int24 tick, bool zeroForOne) public pure returns (uint256) {
@@ -127,7 +178,6 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         return intervals * tickSpacing;
     }
 }
-
 
 /*
 sqrtPRiceLimitX96
