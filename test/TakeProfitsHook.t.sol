@@ -85,7 +85,7 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         // Note the original balance of token0 we have
         uint256 originalBalance = token0.balanceOf(address(this));
 
-        // Place the order
+        // Approve token0 and Place the order, return tickLower from placeOrder()
         token0.approve(address(hook), amount);
         int24 tickLower = hook.placeOrder(poolKey, tick, amount, zeroForOne);
 
@@ -99,16 +99,18 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         assertEq(tickLower, 60);
 
         // Ensure that our balance was reduced by `amount` tokens
-        assertEq(originalBalance - newBalance, amount);
+        assertEq(originalBalance - amount, newBalance);
 
         // Check the balance of ERC-1155 tokens we received
         uint256 tokenId = hook.getTokenId(poolKey, tickLower, zeroForOne);
-        uint256 tokenBalance = hook.balanceOf(address(this), tokenId);
+        uint256 tokenBalance = hook.balanceOf(address(this), tokenId); // balanceOf() is from ERC-1155
 
         // Ensure that we were, in fact, given ERC-1155 tokens for the order
         // equal to the `amount` of token0 tokens we placed the order for
         assertTrue(tokenId != 0);
-        assertEq(tokenBalance, amount);
+        assertEq(tokenBalance, amount); // DK - I guess the balance of ERC-1155 you get is exactly the same amount as the tokens you gave to the hook
+
+        // DK - TODO - add a few more asserts here
     }
 
     function test_cancelOrder() public {
