@@ -62,12 +62,43 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         return TakeProfitsHook.afterInitialize.selector;
     }
 
-    // So why do the linit order in after swap?
+    // So why do the limit order in after swap?
     // After every swap that normal people do, we can look at - what is now the current price / tick of the pool?
     // We compare it to the last known tick that we have and check if price/tick when up or down
     // If up, the price of token0 has increased
     // THEN we search for any open orders on those ticks. If there are, we simply call fillOrder()
-    function afterSwap()
+    // Note - orders can only happen at tick changes / intervals
+    function afterSwap(address, IPoolManager.PoolKey calldata key, IPoolManager.SwapParams calldata params, BalanceDelta) external override poolManagerOnly returns (bytes4) {
+        int24 lastTickLower = tickLowerLasts[key.toId()];
+        (, int24 currentTick, , , , , ) = poolManager.getSlot0(key.toId());
+        int24 currentTickLower = _getTickLower(currentTick, key.tickSpacing);
+
+        bool swapZeroForOne = !params.zeroForOne;
+        int256 swapAmountIn;
+
+        // Tick has increased i.e. price of token 0 has increased
+        if (lastTickLower < currentTickLower) {
+            for (int24 tick = lastTickLower; tick < currentTickLower;) {
+                swapAmountIn = takeProfitPositions[key.toId()][tick][swapZeroForOne];
+
+                if (swapAmountIn > 0) {
+                    _fillOrder(key, tick, swapZeroForOne, swapAmountIn);
+                }
+            }
+            tick += key.tickSpacing;
+        } else {
+            for (int24 tick = lastTickLower; tick > currentTickLower;) {
+                swapAmountIn = takeProfitPositions[key.toId()][tick][swapZeroForOne];
+
+                if (swapAmountIn > 0) {
+                    _fillOrder(key, tick, swapZeroForOne, swapAmountIn);
+                }
+            }
+            tick -= key.tickSpacing;
+        }
+        tickLowerLasts[key.toId()] = currentTickLower;
+        return TakeProfitsHook.afterSwap.selector;
+    }
 
     // Core utilities
     function placeOrder(IPoolManager.PoolKey calldata key, int24 tick, uint256 amountIn, bool zeroForOne)
