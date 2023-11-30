@@ -1,5 +1,9 @@
-# v4-template
-### **A template for writing Uniswap v4 Hooks 🦄**
+# uniswap-v4-hook-practice
+Just doing some learning with examples from the internet, before tackling my own hook. 
+
+<details>
+<summary><h3>A template for writing Uniswap v4 Hooks </h3></summary>
+### **🦄**
 
 [`Use this Template`](https://github.com/saucepoint/v4-template/generate)
 
@@ -12,6 +16,7 @@
    - Add liquidity to a pool
    - Swap tokens on a pool
 6. This template is built using Foundry
+</details>
 
 <details>
 <summary><b>NOTE: v4-core versioning</b></summary>
@@ -26,8 +31,8 @@ If there are issues, please do not hesistate on reaching out to [saucepoint](htt
 
 ---
 
-### Local Development (Anvil)
-
+<details>
+<summary><h3>Local Development (Anvil)</h3></summary>
 *requires [foundry](https://book.getfoundry.sh)*
 
 ```
@@ -48,6 +53,7 @@ forge script script/Anvil.s.sol \
     --code-size-limit 30000 \
     --broadcast
 ```
+</details>
 
 <details>
 <summary><h3>Goerli Testnet</h3></summary>
@@ -117,12 +123,3 @@ Hook deployment failures are caused by incorrect flags or incorrect salt mining
         * If anvil does not have the CREATE2 deployer, your foundry may be out of date. You can update it with `foundryup`
 
 </details>
-
----
-
-Additional resources:
-
-[v4-periphery](https://github.com/uniswap/v4-periphery) contains advanced hook implementations that serve as a great reference
-
-[v4-core](https://github.com/uniswap/v4-core)
-
