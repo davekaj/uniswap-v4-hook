@@ -74,13 +74,16 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
     }
 
     function test_placeOrder() public {
-        // Place a zeroForOne take-profit order
-        // for 10e18 token0 tokens
-        // at tick 100
-
         int24 tick = 100;
         uint256 amount = 10 ether;
         bool zeroForOne = true;
+        _placeOrderHelper(tick, amount, zeroForOne);
+    }
+
+    function _placeOrderHelper(int24 tick, uint256 amount, bool zeroForOne) private returns (uint256) {
+        // Place a zeroForOne take-profit order
+        // for 10e18 token0 tokens
+        // at tick 100
 
         // Note the original balance of token0 we have
         uint256 originalBalance = token0.balanceOf(address(this));
@@ -111,18 +114,18 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         assertEq(tokenBalance, amount); // DK - I guess the balance of ERC-1155 you get is exactly the same amount as the tokens you gave to the hook
 
         // DK - TODO - add a few more asserts here
+
+        return tokenId;
     }
 
     function test_cancelOrder() public {
-        // Place an order similar as earlier, but cancel it later
-
-        // Check the balance of ERC-1155 tokens we received
-
-
+        int24 tick = 100;
+        uint256 amount = 10 ether;
+        bool zeroForOne = true;
+        _placeOrderHelper(tick, amount, zeroForOne);
         // Cancel the order
 
         // Check that we received our token0 tokens back, and no longer own any ERC-1155 tokens
-
     }
 
     function test_orderExecute_zeroForOne() public {
@@ -136,27 +139,20 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
 
         // Check that the hook contract has the expected number of token1 tokens ready to redeem
 
-
         // Ensure we can redeem the token1 tokens
-
     }
 
     function test_orderExecute_oneForZero() public {
-
-
         // Place our order at tick -100 for 10e18 token1 tokens
-
 
         // Do a separate swap from zeroForOne to make tick go down
         // Sell 1e18 token0 tokens for token1 tokens
 
         // Check that the order has been executed
 
-
         // Check that the hook contract has the expected number of token0 tokens ready to redeem
 
         // Ensure we can redeem the token0 tokens
-
     }
 
     function _addLiquidityToPool() private {
@@ -181,7 +177,9 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
 
         // Add liquidity from minimum tick to maximum tick
         modifyPositionRouter.modifyPosition(
-            poolKey, IPoolManager.ModifyPositionParams(TickMath.minUsableTick(60), TickMath.maxUsableTick(60), 50 ether), ZERO_BYTES
+            poolKey,
+            IPoolManager.ModifyPositionParams(TickMath.minUsableTick(60), TickMath.maxUsableTick(60), 50 ether),
+            ZERO_BYTES
         );
 
         // Approve the tokens for swapping through the swapRouter
