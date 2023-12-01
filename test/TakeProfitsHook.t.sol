@@ -122,13 +122,19 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         int24 tick = 100;
         uint256 amount = 10 ether;
         bool zeroForOne = true;
+
+        uint256 originalBalance = token0.balanceOf(address(this));
         uint256 tokenID = _placeOrderHelper(tick, amount, zeroForOne);
 
         // Cancel the order
         hook.cancelOrder(poolKey, tick, zeroForOne);
 
         // Check that we received our token0 tokens back, and no longer own any ERC-1155 tokens
+        uint256 tokenBalance = hook.balanceOf(address(this), tokenID);
+        assertTrue(tokenBalance == 0);
 
+        uint256 newBalance = token0.balanceOf(address(this));
+        assertTrue(newBalance == originalBalance);
     }
 
     function test_orderExecute_zeroForOne() public {
