@@ -28,14 +28,14 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
 
     // DK NOTE - honestly this implementation is a bit confusing.... not sure if it is the correct way to go.
     // ERC-1155 State
-    // stores whether a give tokenId (i.e. take profit order) exists
-    mapping(uint256 tokenId => bool exists) public tokenIdExists;
+    // stores whether a give tokenID (i.e. take profit order) exists
+    mapping(uint256 tokenID => bool exists) public tokenIdExists;
     // stores how many swapped tokens are claimable for a give trade
-    mapping(uint256 tokenId => uint256 claimable) public tokenIdClaimable;
+    mapping(uint256 tokenID => uint256 claimable) public tokenIdClaimable;
     // stores how many tokens need to be sold to execute the trade
-    mapping(uint256 tokenId => uint256 supply) public tokenIdTotalSupply;
-    // stores the data for a given tokenId
-    mapping(uint256 tokenId => TokenData) public tokenIdData;
+    mapping(uint256 tokenID => uint256 supply) public tokenIdTotalSupply;
+    // stores the data for a given tokenID
+    mapping(uint256 tokenID => TokenData) public tokenIdData;
 
     struct TokenData {
         PoolKey poolKey;
@@ -117,15 +117,15 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         int24 tickLower = _getTickLower(tick, key.tickSpacing);
         takeProfitPositions[key.toId()][tickLower][zeroForOne] += int256(amountIn);
 
-        uint256 tokenId = getTokenId(key, tickLower, zeroForOne);
+        uint256 tokenID = getTokenID(key, tickLower, zeroForOne);
 
-        if (!tokenIdExists[tokenId]) {
-            tokenIdExists[tokenId] = true;
-            tokenIdData[tokenId] = TokenData(key, tickLower, zeroForOne);
+        if (!tokenIdExists[tokenID]) {
+            tokenIdExists[tokenID] = true;
+            tokenIdData[tokenID] = TokenData(key, tickLower, zeroForOne);
         }
 
-        _mint(msg.sender, tokenId, amountIn, "");
-        tokenIdTotalSupply[tokenId] += amountIn;
+        _mint(msg.sender, tokenID, amountIn, "");
+        tokenIdTotalSupply[tokenID] += amountIn;
 
         address tokenToBeSoldContract = zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
 
@@ -136,15 +136,15 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
 
     function cancelOrder(PoolKey calldata key, int24 tick, bool zeroForOne) external {
         int24 tickLower = _getTickLower(tick, key.tickSpacing);
-        uint256 tokenId = getTokenId(key, tickLower, zeroForOne);
+        uint256 tokenID = getTokenID(key, tickLower, zeroForOne);
 
         // balanceOf is coming from ERC-1155
-        uint256 amountIn = balanceOf(msg.sender, tokenId);
+        uint256 amountIn = balanceOf(msg.sender, tokenID);
         require(amountIn > 0, "TakeProfitsHook: No orders to cancel");
 
         takeProfitPositions[key.toId()][tickLower][zeroForOne] -= int256(amountIn);
-        tokenIdTotalSupply[tokenId] -= amountIn;
-        _burn(msg.sender, tokenId, amountIn);
+        tokenIdTotalSupply[tokenID] -= amountIn;
+        _burn(msg.sender, tokenID, amountIn);
 
         address tokensToBeSoldContract = zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
         IERC20(tokensToBeSoldContract).transfer(msg.sender, amountIn);
@@ -163,19 +163,19 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
             abi.decode(poolManager.lock(abi.encodeCall(this.handleSwap, (key, swapParams, hookData))), (BalanceDelta));
 
         takeProfitPositions[key.toId()][tick][zeroForOne] -= amountIn;
-        uint256 tokenId = getTokenId(key, tick, zeroForOne);
+        uint256 tokenID = getTokenID(key, tick, zeroForOne);
         uint256 amountOfTokensReceivedFromSwap =
             zeroForOne ? uint256(int256(-delta.amount1())) : uint256(int256(-delta.amount0()));
-        tokenIdClaimable[tokenId] += amountOfTokensReceivedFromSwap;
+        tokenIdClaimable[tokenID] += amountOfTokensReceivedFromSwap;
     }
 
-    function redeem(uint256 tokenId, uint256 amountIn, address destination) external {
-        require(tokenIdClaimable[tokenId] > 0, "TakeProfitsHook - No tokens to redeem");
+    function redeem(uint256 tokenID, uint256 amountIn, address destination) external {
+        require(tokenIdClaimable[tokenID] > 0, "TakeProfitsHook - No tokens to redeem");
 
-        uint256 balance = balanceOf(msg.sender, tokenId);
+        uint256 balance = balanceOf(msg.sender, tokenID);
         require(balance >= amountIn, "TakeProfitsHook - Not enough ERC-1155 tokens to redeem requested amount");
 
-        TokenData memory tokenData = tokenIdData[tokenId];
+        TokenData memory tokenData = tokenIdData[tokenID];
         address tokenToSend = tokenData.zeroForOne
             ? Currency.unwrap(tokenData.poolKey.currency1)
             : Currency.unwrap(tokenData.poolKey.currency0);
@@ -187,11 +187,11 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
 
         // amountToSend = amountIn * (total claimable / total supply)
         // We use fixedpointmathlib.muldivdown to avoid rounding errors
-        uint256 amountToSend = amountIn.mulDivDown(tokenIdClaimable[tokenId], tokenIdTotalSupply[tokenId]);
+        uint256 amountToSend = amountIn.mulDivDown(tokenIdClaimable[tokenID], tokenIdTotalSupply[tokenID]);
 
-        tokenIdClaimable[tokenId] -= amountToSend;
-        tokenIdTotalSupply[tokenId] -= amountIn;
-        _burn(msg.sender, tokenId, amountIn);
+        tokenIdClaimable[tokenID] -= amountToSend;
+        tokenIdTotalSupply[tokenID] -= amountIn;
+        _burn(msg.sender, tokenID, amountIn);
 
         IERC20(tokenToSend).transfer(destination, amountToSend);
     }
@@ -225,7 +225,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
 
     // Note - With a limit order, we mint them an ERC-1155 token. it acts like a receipt of the order, that you can come claim later
     // ERC-1155 helpers
-    function getTokenId(PoolKey calldata key, int24 tick, bool zeroForOne) public pure returns (uint256) {
+    function getTokenID(PoolKey calldata key, int24 tick, bool zeroForOne) public pure returns (uint256) {
         return uint256(keccak256(abi.encodePacked(key.toId(), tick, zeroForOne)));
     }
 

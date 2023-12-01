@@ -105,27 +105,30 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         assertEq(originalBalance - amount, newBalance);
 
         // Check the balance of ERC-1155 tokens we received
-        uint256 tokenId = hook.getTokenId(poolKey, tickLower, zeroForOne);
-        uint256 tokenBalance = hook.balanceOf(address(this), tokenId); // balanceOf() is from ERC-1155
+        uint256 tokenID = hook.getTokenID(poolKey, tickLower, zeroForOne);
+        uint256 tokenBalance = hook.balanceOf(address(this), tokenID); // balanceOf() is from ERC-1155
 
         // Ensure that we were, in fact, given ERC-1155 tokens for the order
         // equal to the `amount` of token0 tokens we placed the order for
-        assertTrue(tokenId != 0);
+        assertTrue(tokenID != 0);
         assertEq(tokenBalance, amount); // DK - I guess the balance of ERC-1155 you get is exactly the same amount as the tokens you gave to the hook
 
         // DK - TODO - add a few more asserts here
 
-        return tokenId;
+        return tokenID;
     }
 
     function test_cancelOrder() public {
         int24 tick = 100;
         uint256 amount = 10 ether;
         bool zeroForOne = true;
-        _placeOrderHelper(tick, amount, zeroForOne);
+        uint256 tokenID = _placeOrderHelper(tick, amount, zeroForOne);
+
         // Cancel the order
+        hook.cancelOrder(poolKey, tick, zeroForOne);
 
         // Check that we received our token0 tokens back, and no longer own any ERC-1155 tokens
+
     }
 
     function test_orderExecute_zeroForOne() public {
