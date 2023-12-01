@@ -30,7 +30,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     // ERC-1155 State
     // stores whether a give tokenID (i.e. take profit order) exists
     mapping(uint256 tokenID => bool exists) public tokenIdExists;
-    // stores how many swapped tokens are claimable for a give trade
+    // stores how many swapped tokens are claimable for a give trade 
     mapping(uint256 tokenID => uint256 claimable) public tokenIdClaimable;
     // stores how many tokens need to be sold to execute the trade
     mapping(uint256 tokenID => uint256 supply) public tokenIdTotalSupply;
@@ -69,7 +69,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         return TakeProfitsHook.afterInitialize.selector;
     }
 
-    // So why do the limit order in after swap?
+    // Why do the limit order in after swap?
     // After every swap that normal people do, we can look at - what is now the current price / tick of the pool?
     // We compare it to the last known tick that we have and check if price/tick when up or down
     // If up, the price of token0 has increased
@@ -81,15 +81,17 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         poolManagerOnly
         returns (bytes4)
     {
-        int24 lastTickLower = tickLowerLasts[key.toId()];
+        int24 lastTickLower = tickLowerLasts[key.toId()]; // the last stored tick value IN THE HOOK
+        // the current tick IN POOL MANAGER
         (, int24 currentTick,,) = poolManager.getSlot0(key.toId()); // hmmm some reason getSlot0() is not 4, not 7 params TODO dave check it out
-        int24 currentTickLower = _getTickLower(currentTick, key.tickSpacing);
+        int24 currentTickLower = _getTickLower(currentTick, key.tickSpacing); // the tick now
 
         bool swapZeroForOne = !params.zeroForOne;
         int256 swapAmountIn;
 
         // Tick has increased i.e. price of token 0 has increased
         if (lastTickLower < currentTickLower) {
+            // Looping in case multiple ticks have passed
             for (int24 tick = lastTickLower; tick < currentTickLower;) {
                 swapAmountIn = takeProfitPositions[key.toId()][tick][swapZeroForOne];
 
@@ -98,6 +100,9 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
                 }
                 tick += key.tickSpacing;
             }
+        // Tick has decreased i.e. price of token 0 has decreased
+        // DK TODO - seems like it is missing the edge case of when the tick is the same.
+        // I believe the for loop would catch it, but it's not clear code.
         } else {
             for (int24 tick = lastTickLower; tick > currentTickLower;) {
                 swapAmountIn = takeProfitPositions[key.toId()][tick][swapZeroForOne];
@@ -114,7 +119,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
 
     // Core utilities
     function placeOrder(PoolKey calldata key, int24 tick, uint256 amountIn, bool zeroForOne) external returns (int24) {
-        int24 tickLower = _getTickLower(tick, key.tickSpacing);
+        int24 tickLower = _getTickLower(tick, key.tickSpacing); // DK TODO - still don't get this one, but it looks like we pass our tikc and then really we are registering for tick lower (to see when it changes out of our tick we want to trade on)
         takeProfitPositions[key.toId()][tickLower][zeroForOne] += int256(amountIn);
 
         uint256 tokenID = getTokenID(key, tickLower, zeroForOne);
@@ -124,7 +129,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
             tokenIdData[tokenID] = TokenData(key, tickLower, zeroForOne);
         }
 
-        _mint(msg.sender, tokenID, amountIn, "");
+        _mint(msg.sender, tokenID, amountIn, ""); // erc-1155 always equal to exact token amount
         tokenIdTotalSupply[tokenID] += amountIn;
 
         address tokenToBeSoldContract = zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
@@ -150,7 +155,8 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         IERC20(tokensToBeSoldContract).transfer(msg.sender, amountIn);
     }
 
-    // SInce there is a single contract that manages all the pools, we need to go get a LOCK on the pool manager in order to do that
+    // @dev Called on afterSwap()
+    // Since there is a single contract that manages all the pools, we need to go get a LOCK on the pool manager in order to do that
     // Then give it a callback - once you get the lock, do this for me
     function _fillOrder(PoolKey calldata key, int24 tick, bool zeroForOne, int256 amountIn, bytes calldata hookData) internal {
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
@@ -184,7 +190,6 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         // total supply = total amount of tokens that were part of the order to be sold
         // therefore, users's share = (amountIn / total supply)
         // therefore, amount to send to user = (users share * total claimable)
-
         // amountToSend = amountIn * (total claimable / total supply)
         // We use fixedpointmathlib.muldivdown to avoid rounding errors
         uint256 amountToSend = amountIn.mulDivDown(tokenIdClaimable[tokenID], tokenIdTotalSupply[tokenID]);
@@ -246,26 +251,3 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         return intervals * tickSpacing;
     }
 }
-
-/*
-sqrtPRiceLimitX96
-Q Notation
-Some Value 'V' that is in decimal
-V => Q Notation with X92
-
-V * (2 ^ k) where k is some constant
-V * (2 ^ 96)
-
-Imagine V represented the price of Tokan A in terms of Token B
-1 Token A = 1.0000245 Token B, where 1.000245 is V
-V * 2^96 = 1.0000245 * 2^96 = 792467020000000000.... (uint160)
-
-`sqrtPriceLimitX96` is the Q notation value for the Square Root of the Price (right now)
-Price (right now) = Price(i=currentTick) = 1.0001 ^ i
-
-sqrtPriceX96 = sqrt(1.0001 ^ i) * 2^96
-
-`sqrtPriceLimitX96` specifies a LIMIT on the price ratio
-
-This was all recorded to do reasonable slippage in orders
-*/

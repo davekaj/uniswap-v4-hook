@@ -139,16 +139,39 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
 
     function test_orderExecute_zeroForOne() public {
         // Place our order at tick 100 for 10e18 token0 tokens
+        int24 tick = 100;
+        uint256 amount = 10 ether;
+        bool zeroForOne = true;
+
+        uint256 tokenID = _placeOrderHelper(tick, amount, zeroForOne);
 
         // Do a separate swap from oneForZero to make tick go up
-
         // Sell 1e18 token1 tokens for token0 tokens
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: !zeroForOne, // because we want to push the tick in the other direction
+            amountSpecified: 1 ether,
+            sqrtPriceLimitX96: TickMath.MAX_SQRT_RATIO - 1 // DK - todo, not sure
+        });
+
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({withdrawTokens: true, settleUsingTransfer: true});
+
+        swapRouter.swap(poolKey, params, testSettings, ZERO_BYTES); // DK - why ZERO_BYTES
 
         // Check that the order has been executed
+        int256 tokensLeftInOrder = hook.takeProfitPositions(poolId, tick, zeroForOne);
+        assertEq(tokensLeftInOrder, 0);
 
         // Check that the hook contract has the expected number of token1 tokens ready to redeem
+        uint256 claimableTokens = hook.tokenIdClaimable(tokenID);
+        uint256 hookContractToken1Balance = token1.balanceOf(address(hook));
+        assertEq(claimableTokens, hookContractToken1Balance);
 
         // Ensure we can redeem the token1 tokens
+        uint256 originalToken1Balance = token1.balanceOf(address(this));
+        hook.redeem(tokenID, amount, address(this));
+        uint256 newToken1Balance = token1.balanceOf(address(this));
+        assertEq(newToken1Balance - originalToken1Balance, claimableTokens);
     }
 
     function test_orderExecute_oneForZero() public {
@@ -163,6 +186,9 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
 
         // Ensure we can redeem the token0 tokens
     }
+
+    // ---------------------------------- Setup Functions ----------------------------------
+    // -------------------------------------------------------------------------------------
 
     function _addLiquidityToPool() private {
         // Mint a lot of tokens to ourselves
