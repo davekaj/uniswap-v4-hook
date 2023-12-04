@@ -81,25 +81,23 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
     }
 
     function _placeOrderHelper(int24 tick, uint256 amount, bool zeroForOne) private returns (uint256) {
-        // Place a zeroForOne take-profit order
-        // for 10e18 token0 tokens
-        // at tick 100
+        TestERC20 token = zeroForOne ? token0 : token1;
 
-        // Note the original balance of token0 we have
-        uint256 originalBalance = token0.balanceOf(address(this));
+        // Note the original balance of token we have
+        uint256 originalBalance = token.balanceOf(address(this));
 
         // Approve token0 and Place the order, return tickLower from placeOrder()
-        token0.approve(address(hook), amount);
+        token.approve(address(hook), amount);
         int24 tickLower = hook.placeOrder(poolKey, tick, amount, zeroForOne);
 
-        // Note the new balance of token0 we have
-        uint256 newBalance = token0.balanceOf(address(this));
+        // Note the new balance of token we have
+        uint256 newBalance = token.balanceOf(address(this));
 
         // Since we deployed the pool contract with tick spacing = 60
         // i.e. the tick can only be a multiple of 60
-        // and initially the tick is 0
-        // the tickLower should be 60 since we placed an order at tick 100
-        assertEq(tickLower, 60);
+        // and initially the tick is 0, lowerTick should be 60 or -120
+        int24 tickExpected = zeroForOne ? int24(60) : int24(-120); // Cheap way of checking - DK
+        assertEq(tickLower, tickExpected);
 
         // Ensure that our balance was reduced by `amount` tokens
         assertEq(originalBalance - amount, newBalance);
@@ -109,7 +107,7 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         uint256 tokenBalance = hook.balanceOf(address(this), tokenID); // balanceOf() is from ERC-1155
 
         // Ensure that we were, in fact, given ERC-1155 tokens for the order
-        // equal to the `amount` of token0 tokens we placed the order for
+        // equal to the `amount` of token tokens we placed the order for
         assertTrue(tokenID != 0);
         assertEq(tokenBalance, amount); // DK - I guess the balance of ERC-1155 you get is exactly the same amount as the tokens you gave to the hook
 
@@ -176,15 +174,42 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
 
     function test_orderExecute_oneForZero() public {
         // Place our order at tick -100 for 10e18 token1 tokens
+        int24 tick = -100;
+        uint256 amount = 10 ether;
+        bool zeroForOne = false;
+
+        uint256 tokenID = _placeOrderHelper(tick, amount, zeroForOne);
 
         // Do a separate swap from zeroForOne to make tick go down
         // Sell 1e18 token0 tokens for token1 tokens
 
+        // Do a separate swap from oneForZero to make tick go up
+        // Sell 1e18 token1 tokens for token0 tokens
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: !zeroForOne, // because we want to push the tick in the other direction
+            amountSpecified: 1 ether,
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_RATIO + 1
+        });
+
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({withdrawTokens: true, settleUsingTransfer: true});
+
+        swapRouter.swap(poolKey, params, testSettings, ZERO_BYTES);
+
         // Check that the order has been executed
+        int256 tokensLeftInOrder = hook.takeProfitPositions(poolId, tick, zeroForOne);
+        assertEq(tokensLeftInOrder, 0);
 
         // Check that the hook contract has the expected number of token0 tokens ready to redeem
+        uint256 claimableTokens = hook.tokenIdClaimable(tokenID);
+        uint256 hookContractToken0Balance = token0.balanceOf(address(hook));
+        assertEq(claimableTokens, hookContractToken0Balance);
 
         // Ensure we can redeem the token0 tokens
+        uint256 originalToken0Balance = token0.balanceOf(address(this));
+        hook.redeem(tokenID, amount, address(this));
+        uint256 newToken0Balance = token0.balanceOf(address(this));
+        assertEq(newToken0Balance - originalToken0Balance, claimableTokens);
     }
 
     // ---------------------------------- Setup Functions ----------------------------------
