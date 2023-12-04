@@ -73,30 +73,18 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         _addLiquidityToPool();
     }
 
-    function test_placeOrder() public {
-        int24 tick = 100;
-        uint256 amount = 10 ether;
-        bool zeroForOne = true;
-        _placeOrderHelper(tick, amount, zeroForOne);
-    }
-
     function _placeOrderHelper(int24 tick, uint256 amount, bool zeroForOne) private returns (uint256) {
         TestERC20 token = zeroForOne ? token0 : token1;
 
-        // Note the original balance of token we have
         uint256 originalBalance = token.balanceOf(address(this));
-
-        // Approve token0 and Place the order, return tickLower from placeOrder()
         token.approve(address(hook), amount);
         int24 tickLower = hook.placeOrder(poolKey, tick, amount, zeroForOne);
 
-        // Note the new balance of token we have
         uint256 newBalance = token.balanceOf(address(this));
 
         // Since we deployed the pool contract with tick spacing = 60
-        // i.e. the tick can only be a multiple of 60
         // and initially the tick is 0, lowerTick should be 60 or -120
-        int24 tickExpected = zeroForOne ? int24(60) : int24(-120); // Cheap way of checking - DK
+        int24 tickExpected = zeroForOne ? int24(60) : int24(-120); // Cheap way of checking, as it wouldn't work on fuzzing - DK
         assertEq(tickLower, tickExpected);
 
         // Ensure that our balance was reduced by `amount` tokens
@@ -109,11 +97,18 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         // Ensure that we were, in fact, given ERC-1155 tokens for the order
         // equal to the `amount` of token tokens we placed the order for
         assertTrue(tokenID != 0);
-        assertEq(tokenBalance, amount); // DK - I guess the balance of ERC-1155 you get is exactly the same amount as the tokens you gave to the hook
+        assertEq(tokenBalance, amount); // The balance of ERC-1155 == tokens in the order, always
 
         // DK - TODO - add a few more asserts here
 
         return tokenID;
+    }
+
+    function test_placeOrder() public {
+        int24 tick = 100;
+        uint256 amount = 10 ether;
+        bool zeroForOne = true;
+        _placeOrderHelper(tick, amount, zeroForOne);
     }
 
     function test_cancelOrder() public {
@@ -124,13 +119,11 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         uint256 originalBalance = token0.balanceOf(address(this));
         uint256 tokenID = _placeOrderHelper(tick, amount, zeroForOne);
 
-        // Cancel the order
         hook.cancelOrder(poolKey, tick, zeroForOne);
 
         // Check that we received our token0 tokens back, and no longer own any ERC-1155 tokens
         uint256 tokenBalance = hook.balanceOf(address(this), tokenID);
         assertTrue(tokenBalance == 0);
-
         uint256 newBalance = token0.balanceOf(address(this));
         assertTrue(newBalance == originalBalance);
     }
@@ -140,21 +133,28 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         int24 tick = 100;
         uint256 amount = 10 ether;
         bool zeroForOne = true;
-
         uint256 tokenID = _placeOrderHelper(tick, amount, zeroForOne);
 
         // Do a separate swap from oneForZero to make tick go up
         // Sell 1e18 token1 tokens for token0 tokens
+
+        // sqrtPriceLimitX96
+        // You can get a number from its Q Notation by dividing it by 2 ^ K
+        // K is equal to 96, and it's represented as the number after X in variable names in the Uniswap codebase.
+        // Example: store 1.000234 in Solidity 
+        // Using Q notation with k = 96 you can represent it as 79246702000000000000000000000
+        // Which is an integer value that can easily fit in a uint160 
+        // sqrtPriceX96 is a RATIO of token0 to token1
+        // sqrtPriceLimitX96 is a LIMIT on the slippage, so 0.1-1% or something like that, applied to the price they wanted
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: !zeroForOne, // because we want to push the tick in the other direction
             amountSpecified: 1 ether,
-            sqrtPriceLimitX96: TickMath.MAX_SQRT_RATIO - 1 // DK - todo, not sure
+            sqrtPriceLimitX96: TickMath.MAX_SQRT_RATIO - 1 // DK - TODO, not sure, need to understand it
         });
 
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({withdrawTokens: true, settleUsingTransfer: true});
-
-        swapRouter.swap(poolKey, params, testSettings, ZERO_BYTES); // DK - why ZERO_BYTES
+        swapRouter.swap(poolKey, params, testSettings, ZERO_BYTES); // DK - TODO - why ZERO_BYTES
 
         // Check that the order has been executed
         int256 tokensLeftInOrder = hook.takeProfitPositions(poolId, tick, zeroForOne);
@@ -177,11 +177,7 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         int24 tick = -100;
         uint256 amount = 10 ether;
         bool zeroForOne = false;
-
         uint256 tokenID = _placeOrderHelper(tick, amount, zeroForOne);
-
-        // Do a separate swap from zeroForOne to make tick go down
-        // Sell 1e18 token0 tokens for token1 tokens
 
         // Do a separate swap from oneForZero to make tick go up
         // Sell 1e18 token1 tokens for token0 tokens
@@ -193,7 +189,6 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
 
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({withdrawTokens: true, settleUsingTransfer: true});
-
         swapRouter.swap(poolKey, params, testSettings, ZERO_BYTES);
 
         // Check that the order has been executed

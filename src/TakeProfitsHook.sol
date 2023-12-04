@@ -26,7 +26,6 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     mapping(PoolId poolId => mapping(int24 tick => mapping(bool zeroForOne => int256 amount))) public
         takeProfitPositions;
 
-    // DK NOTE - honestly this implementation is a bit confusing.... not sure if it is the correct way to go.
     // ERC-1155 State
     // stores whether a give tokenID (i.e. take profit order) exists
     mapping(uint256 tokenID => bool exists) public tokenIdExists;
@@ -69,8 +68,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         return TakeProfitsHook.afterInitialize.selector;
     }
 
-    // Why do the limit order in after swap?
-    // After every swap that normal people do, we can look at - what is now the current price / tick of the pool?
+    // Why do the limit order in after swap? Because we can look at the new price and tick
     // We compare it to the last known tick that we have and check if price/tick when up or down
     // If up, the price of token0 has increased
     // THEN we search for any open orders on those ticks. If there are, we simply call fillOrder()
@@ -83,7 +81,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     {
         int24 lastTickLower = tickLowerLasts[key.toId()]; // the last stored tick value IN THE HOOK
         // the current tick IN POOL MANAGER
-        (, int24 currentTick,,) = poolManager.getSlot0(key.toId()); // hmmm some reason getSlot0() is not 4, not 7 params TODO dave check it out
+        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
         int24 currentTickLower = _getTickLower(currentTick, key.tickSpacing); // the tick now
 
         bool swapZeroForOne = !params.zeroForOne;
@@ -94,19 +92,16 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
             // Looping in case multiple ticks have passed
             for (int24 tick = lastTickLower; tick < currentTickLower;) {
                 swapAmountIn = takeProfitPositions[key.toId()][tick][swapZeroForOne];
-
                 if (swapAmountIn > 0) {
                     _fillOrder(key, tick, swapZeroForOne, swapAmountIn, hookData);
                 }
                 tick += key.tickSpacing;
             }
+
         // Tick has decreased i.e. price of token 0 has decreased
-        // DK TODO - seems like it is missing the edge case of when the tick is the same.
-        // I believe the for loop would catch it, but it's not clear code.
-        } else {
+        } else if (lastTickLower > currentTickLower){ // if equal is ignored as nothing needs to be done
             for (int24 tick = lastTickLower; tick > currentTickLower;) {
                 swapAmountIn = takeProfitPositions[key.toId()][tick][swapZeroForOne];
-
                 if (swapAmountIn > 0) {
                     _fillOrder(key, tick, swapZeroForOne, swapAmountIn, hookData);
                 }
@@ -119,9 +114,8 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
 
     // Core utilities
     function placeOrder(PoolKey calldata key, int24 tick, uint256 amountIn, bool zeroForOne) external returns (int24) {
-        int24 tickLower = _getTickLower(tick, key.tickSpacing); // DK TODO - still don't get this one, but it looks like we pass our tikc and then really we are registering for tick lower (to see when it changes out of our tick we want to trade on)
+        int24 tickLower = _getTickLower(tick, key.tickSpacing);
         takeProfitPositions[key.toId()][tickLower][zeroForOne] += int256(amountIn);
-
         uint256 tokenID = getTokenID(key, tickLower, zeroForOne);
 
         if (!tokenIdExists[tokenID]) {
@@ -133,9 +127,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         tokenIdTotalSupply[tokenID] += amountIn;
 
         address tokenToBeSoldContract = zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
-
         IERC20(tokenToBeSoldContract).transferFrom(msg.sender, address(this), amountIn);
-
         return tickLower;
     }
 
@@ -157,7 +149,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
 
     // @dev Called on afterSwap()
     // Since there is a single contract that manages all the pools, we need to go get a LOCK on the pool manager in order to do that
-    // Then give it a callback - once you get the lock, do this for me
+    // Then give it a callback
     function _fillOrder(PoolKey calldata key, int24 tick, bool zeroForOne, int256 amountIn, bytes calldata hookData) internal {
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: zeroForOne,
@@ -186,7 +178,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
             ? Currency.unwrap(tokenData.poolKey.currency1)
             : Currency.unwrap(tokenData.poolKey.currency0);
 
-        // multiple people could have added tokens to the same order, so we need to calculate teh amount to send
+        // multiple people could have added tokens to the same order, so we need to calculate the amount to send
         // total supply = total amount of tokens that were part of the order to be sold
         // therefore, users's share = (amountIn / total supply)
         // therefore, amount to send to user = (users share * total claimable)
@@ -197,7 +189,6 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         tokenIdClaimable[tokenID] -= amountToSend;
         tokenIdTotalSupply[tokenID] -= amountIn;
         _burn(msg.sender, tokenID, amountIn);
-
         IERC20(tokenToSend).transfer(destination, amountToSend);
     }
 
@@ -207,7 +198,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     {
         BalanceDelta delta = poolManager.swap(key, params, hookData);
 
-        if (params.zeroForOne) {
+        if (params.zeroForOne) { // DK - I believe we do 2 here, in case of slippage, sometimes you will get some of your tokens back
             if (delta.amount0() > 0) {
                 IERC20(Currency.unwrap(key.currency0)).transfer(address(poolManager), uint128(delta.amount0()));
                 poolManager.settle(key.currency0);
@@ -239,7 +230,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         tickLowerLasts[poolId] = tickLower;
     }
 
-    // DK - I don't understand this function at all. Why do we calculate intervals then just reverse it? I tcould be because of the negative if statement
+    // DK TODO - I don't understand this function at all. Why do we calculate intervals then just reverse it? It could be because of the negative if statement
     // But I don't get that part either. He is saying when it is negative, you need to add another -1 value to the intervals. But why?
     function _getTickLower(int24 actualTick, int24 tickSpacing) private pure returns (int24) {
         int24 intervals = actualTick / tickSpacing;
