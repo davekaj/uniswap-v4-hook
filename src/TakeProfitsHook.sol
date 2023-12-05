@@ -29,7 +29,7 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     // ERC-1155 State
     // stores whether a give tokenID (i.e. take profit order) exists
     mapping(uint256 tokenID => bool exists) public tokenIdExists;
-    // stores how many swapped tokens are claimable for a give trade 
+    // stores how many swapped tokens are claimable for a give trade
     mapping(uint256 tokenID => uint256 claimable) public tokenIdClaimable;
     // stores how many tokens need to be sold to execute the trade
     mapping(uint256 tokenID => uint256 supply) public tokenIdTotalSupply;
@@ -73,12 +73,13 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     // If up, the price of token0 has increased
     // THEN we search for any open orders on those ticks. If there are, we simply call fillOrder()
     // Note - orders can only happen at tick changes / intervals
-    function afterSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, BalanceDelta, bytes calldata hookData)
-        external
-        override
-        poolManagerOnly
-        returns (bytes4)
-    {
+    function afterSwap(
+        address,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        BalanceDelta,
+        bytes calldata hookData
+    ) external override poolManagerOnly returns (bytes4) {
         int24 lastTickLower = tickLowerLasts[key.toId()]; // the last stored tick value IN THE HOOK
         // the current tick IN POOL MANAGER
         (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
@@ -98,8 +99,9 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
                 tick += key.tickSpacing;
             }
 
-        // Tick has decreased i.e. price of token 0 has decreased
-        } else if (lastTickLower > currentTickLower){ // if equal is ignored as nothing needs to be done
+            // Tick has decreased i.e. price of token 0 has decreased
+        } else if (lastTickLower > currentTickLower) {
+            // if equal is ignored as nothing needs to be done
             for (int24 tick = lastTickLower; tick > currentTickLower;) {
                 swapAmountIn = takeProfitPositions[key.toId()][tick][swapZeroForOne];
                 if (swapAmountIn > 0) {
@@ -150,7 +152,9 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     // @dev Called on afterSwap()
     // Since there is a single contract that manages all the pools, we need to go get a LOCK on the pool manager in order to do that
     // Then give it a callback
-    function _fillOrder(PoolKey calldata key, int24 tick, bool zeroForOne, int256 amountIn, bytes calldata hookData) internal {
+    function _fillOrder(PoolKey calldata key, int24 tick, bool zeroForOne, int256 amountIn, bytes calldata hookData)
+        internal
+    {
         IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
             zeroForOne: zeroForOne,
             amountSpecified: amountIn,
@@ -198,7 +202,8 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
     {
         BalanceDelta delta = poolManager.swap(key, params, hookData);
 
-        if (params.zeroForOne) { // DK - I believe we do 2 here, in case of slippage, sometimes you will get some of your tokens back
+        if (params.zeroForOne) {
+            // DK - I believe we do 2 here, in case of slippage, sometimes you will get some of your tokens back
             if (delta.amount0() > 0) {
                 IERC20(Currency.unwrap(key.currency0)).transfer(address(poolManager), uint128(delta.amount0()));
                 poolManager.settle(key.currency0);
@@ -230,11 +235,10 @@ contract TakeProfitsHook is BaseHook, ERC1155 {
         tickLowerLasts[poolId] = tickLower;
     }
 
-    // DK TODO - I don't understand this function at all. Why do we calculate intervals then just reverse it? It could be because of the negative if statement
-    // But I don't get that part either. He is saying when it is negative, you need to add another -1 value to the intervals. But why?
     function _getTickLower(int24 actualTick, int24 tickSpacing) private pure returns (int24) {
         int24 intervals = actualTick / tickSpacing;
 
+        // DK - Not exactly clear why this is needed, but I get in generally
         if (actualTick < 0 && (actualTick % tickSpacing) != 0) {
             intervals--;
         }

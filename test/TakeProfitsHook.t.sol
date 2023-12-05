@@ -34,7 +34,7 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
 
-    bytes internal constant ZERO_BYTES = bytes("");
+    bytes internal constant ZERO_BYTES = bytes("0");
 
     // Hardcode the address for our hook instead of deploying it
     // We will overwrite the storage to replace code at this address with code from the stub
@@ -149,7 +149,7 @@ contract TakeProfitsHookTest is Test, GasSnapshot {
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: !zeroForOne, // because we want to push the tick in the other direction
             amountSpecified: 1 ether,
-            sqrtPriceLimitX96: TickMath.MAX_SQRT_RATIO - 1 // DK - TODO, not sure, need to understand it
+            sqrtPriceLimitX96: TickMath.MAX_SQRT_RATIO - 1 // We're just saying any slippage is OK here
         });
 
         PoolSwapTest.TestSettings memory testSettings =
