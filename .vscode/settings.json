@@ -1,7 +1,7 @@
 {
     "solidity.compileUsingRemoteVersion": "v0.8.20",
     "solidity.defaultCompiler": "remote",
-    "solidity.packageDefaultDependenciesContractsDirectory": "sec",
+    "solidity.packageDefaultDependenciesContractsDirectory": "src",
     "solidity.packageDefaultDependenciesDirectory": "lib",
     "solidity.remappings": [
         "@uniswap/v4-core/contracts/=lib/v4-core/src/",
